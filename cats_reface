@@ -1,0 +1,194 @@
+import streamlit as st
+import replicate
+import os
+from PIL import Image
+import io
+import requests
+
+# Set page config
+st.set_page_config(page_title="🐱 Cat Transformer", layout="wide")
+st.title("🐱 Cat Transformer - Nano Banana AI")
+st.subheader("Transform your cat photos with AI magic!")
+
+# Check for API token
+api_token = os.getenv("REPLICATE_API_TOKEN")
+if not api_token:
+    st.error("❌ REPLICATE_API_TOKEN not set! Please set your API token.")
+    st.info("To get started:\n1. Go to https://replicate.com\n2. Get your API token\n3. Set environment variable: `export REPLICATE_API_TOKEN=your_token_here`")
+    st.stop()
+
+# Initialize Replicate client
+os.environ["REPLICATE_API_TOKEN"] = api_token
+
+# Sidebar for settings
+st.sidebar.header("⚙️ Settings")
+model_info = st.sidebar.info(
+    "Using: **google/nano-banana** (Gemini 2.5 Flash Image)\n\n"
+    "This AI model excels at:\n"
+    "- Realistic transformations\n"
+    "- Style changes\n"
+    "- Scene preservation\n"
+    "- Character consistency"
+)
+
+# Main content area - two columns
+col1, col2 = st.columns(2)
+
+with col1:
+    st.header("📸 Step 1: Upload Cat Photo")
+    uploaded_file = st.file_uploader(
+        "Choose a cat image",
+        type=["jpg", "jpeg", "png", "webp"],
+        help="Upload a photo of your cat that you want to transform"
+    )
+    
+    if uploaded_file is not None:
+        # Display uploaded image
+        image = Image.open(uploaded_file)
+        st.image(image, caption="Original cat photo", use_column_width=True)
+        
+        # Show image info
+        st.caption(f"Size: {image.size[0]}x{image.size[1]}px")
+
+with col2:
+    st.header("✨ Step 2: Describe the Transformation")
+    
+    # Transformation prompt
+    prompt = st.text_area(
+        "What do you want to do with the cat?",
+        placeholder="Examples:\n- Make the cat look like a superhero\n- Transform the cat into a cartoon character\n- Make the cat look fancy in a royal outfit\n- Paint the cat in oil painting style\n- Make the cat look like it's in space",
+        height=150,
+        help="Be creative and descriptive! The more detailed, the better results."
+    )
+    
+    # Preset prompts
+    st.subheader("💡 Quick ideas:")
+    col_idea1, col_idea2 = st.columns(2)
+    
+    with col_idea1:
+        if st.button("🎨 Artistic Style"):
+            prompt = "Transform the cat into a beautiful watercolor painting style artwork"
+        if st.button("🚀 Space Adventure"):
+            prompt = "Make the cat an astronaut in space with a helmet and stars around"
+        if st.button("👑 Royal Crown"):
+            prompt = "Make the cat look like royalty wearing a crown and royal outfit"
+    
+    with col_idea2:
+        if st.button("🦸 Superhero"):
+            prompt = "Transform the cat into a superhero with a cape and mask"
+        if st.button("🎭 Cartoon"):
+            prompt = "Turn the cat into a cute cartoon character with big expressive eyes"
+        if st.button("🌈 Rainbow Style"):
+            prompt = "Make the cat multicolored and rainbow-like with magical effects"
+
+# Process button
+st.divider()
+
+col_process1, col_process2, col_process3 = st.columns([1, 2, 1])
+
+with col_process2:
+    process_button = st.button(
+        "🚀 Transform the Cat!",
+        use_container_width=True,
+        type="primary",
+        disabled=(uploaded_file is None or not prompt.strip())
+    )
+
+# Process the transformation
+if process_button:
+    if uploaded_file is None:
+        st.error("Please upload a cat photo first!")
+    elif not prompt.strip():
+        st.error("Please describe what you want to do with the cat!")
+    else:
+        # Save uploaded image temporarily
+        image_bytes = uploaded_file.getvalue()
+        
+        with st.spinner("🎨 AI is transforming your cat... This may take a moment..."):
+            try:
+                # Prepare input for Replicate
+                # We need to upload the image or provide a URL
+                # For simplicity, we'll use base64 encoding
+                import base64
+                
+                # Encode image to base64
+                image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+                image_data_url = f"data:image/{uploaded_file.type.split('/')[-1]};base64,{image_base64}"
+                
+                # Run the model
+                output = replicate.run(
+                    "google/nano-banana",
+                    input={
+                        "prompt": prompt,
+                        "image_input": [image_data_url]
+                    }
+                )
+                
+                # Display results
+                st.success("✅ Transformation complete!")
+                
+                # Create two columns for before/after
+                result_col1, result_col2 = st.columns(2)
+                
+                with result_col1:
+                    st.subheader("Original")
+                    st.image(image, use_column_width=True)
+                
+                with result_col2:
+                    st.subheader("Transformed ✨")
+                    
+                    # The output is a FileOutput object
+                    # We need to get the image URL and display it
+                    if hasattr(output, 'url'):
+                        result_url = output.url()
+                    else:
+                        # Try to get URL from the output directly
+                        result_url = str(output)
+                    
+                    # Display the result
+                    st.image(result_url, use_column_width=True)
+                    
+                    # Download button
+                    try:
+                        result_image = Image.open(requests.get(result_url, stream=True).raw)
+                        img_byte_arr = io.BytesIO()
+                        result_image.save(img_byte_arr, format='PNG')
+                        img_byte_arr.seek(0)
+                        
+                        st.download_button(
+                            label="📥 Download Transformed Cat",
+                            data=img_byte_arr,
+                            file_name="transformed_cat.png",
+                            mime="image/png"
+                        )
+                    except Exception as e:
+                        st.info(f"📄 View result: [Click here]({result_url})")
+                
+                # Show the prompt used
+                st.divider()
+                st.subheader("📝 What we told the AI:")
+                st.info(prompt)
+                
+            except Exception as e:
+                st.error(f"❌ Error during transformation: {str(e)}")
+                st.info("Tips:\n- Make sure your REPLICATE_API_TOKEN is valid\n- Try a simpler prompt\n- Check your image format")
+
+# Footer
+st.divider()
+st.markdown("""
+---
+### 🎓 How it works
+This app uses **Google's Nano Banana** (Gemini 2.5 Flash Image) AI model through Replicate API to transform your cat photos based on your descriptions.
+
+### 📚 Tips for best results
+- Be specific about style, colors, and mood
+- Include details like "photorealistic", "cartoon", "oil painting"
+- Mention lighting and composition
+- Use artistic references when possible
+- Try different descriptions to get different results!
+
+### 🔗 Links
+- [Replicate API](https://replicate.com)
+- [Nano Banana Model](https://replicate.com/google/nano-banana)
+- [Google AI](https://ai.google.dev)
+""")
